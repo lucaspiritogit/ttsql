@@ -2,7 +2,7 @@
 
 A local, Dockerized natural-language-to-SQL application.
 
-The user asks a question in a terminal UI, the backend asks a locally hosted model to generate SQL, executes the SQL against a PostgreSQL database seeded from `data.csv`, and returns the generated SQL plus the query result.
+The user asks a question in a terminal UI, the backend asks a locally hosted model to generate SQL, executes the SQL against a PostgreSQL database seeded from `data.csv`, and returns the generated SQL plus the query result through SSE streaming to allow for a dynamic experience on the terminal.
 
 ## Project structure
 
@@ -53,13 +53,12 @@ I decided to create a monorepo with both `client` and `server` to separate conce
 docker compose up --build -d
 ```
 
-### 2. Pull the local model
+### 2. Pull the local models
 
 The Ollama container needs the configured models available locally. Pull them once:
 
 ```bash
-docker compose exec model ollama pull pxlksr/defog_sqlcoder-7b-2:Q2_KS
-docker compose exec model ollama pull qwen2.5-coder:1.5b
+docker compose exec model ollama pull pxlksr/defog_sqlcoder-7b-2:Q2_KS && docker compose exec model ollama pull qwen2.5-coder:1.5b
 ```
 
 ### 3. Run the TUI
@@ -109,4 +108,12 @@ For high traffic, the services should be scaled independently:
 
 For this exercise I used [Pi](https://pi.dev/) as the coding-agent harness with GPT-5.5.
 
-The assignment PDF text was provided as context, with the additional decision that the client should be a TUI rather than a web UI. The agent was also instructed to keep responsibilities separated across files instead of putting all logic into `main.py`.
+The assignment PDF text was provided as context, with the additional decision that the client should be a TUI rather than a web UI. The agent was also instructed to respect the single responsability principle to avoid dumping all logic into `main.py` when requesting changes.
+
+### Skills
+
+To improve the agent capabilities, i used the following skills:
+
+- [/grill-me](https://github.com/mattpocock/skills/blob/main/skills/productivity/grill-me/SKILL.md) Similar to a PLAN mode, used to talk about product definitions and understandment of the assignment with the agent.
+- [minimalist-ui](https://www.ui-skills.com/skills/leonxlnx/minimalist-skill/) Im a fan of monochrome palletes and i wanted to have a minimalistic feeling for this agentic TUI
+- [improve-codebase-architecture](https://github.com/mattpocock/skills/blob/main/skills/engineering/improve-codebase-architecture/SKILL.md) Not heavily used, but its really nice to make the finishing touches on the overall arquitecture/structure of the repo.
