@@ -1,0 +1,10 @@
+[project]
+name = "text-to-sql-lpirito"
+version = "0.1.0"
+description = ""
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv.workspace]
+members = ["apps/server", "apps/client"]

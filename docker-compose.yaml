@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data.csv:/seed/data.csv
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  model:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama:/root/.ollama
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://app:app@db:5432/app
+      OLLAMA_URL: http://model:11434
+      MODEL_NAME: pxlksr/defog_sqlcoder-7b-2:Q2_KS
+      EXPLANATION_MODEL_NAME: qwen2.5-coder:1.5b
+    depends_on:
+      - db
+      - model
+    ports:
+      - "8000:8000"
+
+  client:
+    build:
+      context: .
+      dockerfile: apps/client/Dockerfile
+    environment:
+      API_URL: http://server:8000
+    depends_on:
+      - server
+    stdin_open: true
+    tty: true
+
+volumes:
+  ollama:
