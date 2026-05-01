@@ -28,6 +28,10 @@ def thinking_spinner(message: str = "Thinking. Generating SQL and querying the d
     return Spinner("dots", Text(message, style=f"bold {GREEN_TEXT}"), style=GREEN_TEXT)
 
 
+def answer_spinner(message: str = "Writing answer...") -> Spinner:
+    return Spinner("dots", Text(message, style=f"bold {GREEN_TEXT}"), style=GREEN_TEXT)
+
+
 def update_thinking_spinner(spinner: Spinner, message: str) -> None:
     spinner.update(text=Text(message, style=f"bold {GREEN_TEXT}"))
 
@@ -44,11 +48,16 @@ def canceled_panel(message: str = "Canceled.") -> Panel:
     return _panel(Text(message, style=MUTED), title="Canceled", border_style=BORDER)
 
 
+def answer_panel(answer: str) -> Panel:
+    return _panel(Text(answer, style=f"bold {TEXT}"), border_style=BORDER)
+
+
 def format_response(payload: Any) -> Panel:
     if isinstance(payload, dict):
-        answer = payload.get("answer") or payload.get("message")
-        sql = payload.get("sql") or payload.get("query") or payload.get("generated_sql")
-        rows = payload.get("rows") or payload.get("result") or payload.get("results")
+        sql = payload.get("sql") or payload.get(
+            "query") or payload.get("generated_sql")
+        rows = payload.get("rows") or payload.get(
+            "result") or payload.get("results")
 
         sections: list[RenderableType] = []
         if sql:
@@ -57,23 +66,20 @@ def format_response(payload: Any) -> Panel:
         if rows is not None:
             sections.append(_section_label("Result"))
             sections.append(_rows_block(rows))
-        if answer:
-            sections.append(_section_label("Answer"))
-            sections.append(Text(str(answer), style=f"bold {TEXT}"))
 
         if sections:
-            return _panel(Group(*sections), title="Response", border_style=BORDER)
+            return _panel(Group(*sections), border_style=BORDER)
 
-        return _panel(JSON.from_data(payload), title="Response", border_style=BORDER)
+        return _panel(JSON.from_data(payload), border_style=BORDER)
 
-    return _panel(Text(str(payload), style=TEXT), title="Response", border_style=BORDER)
+    return _panel(Text(str(payload), style=TEXT), border_style=BORDER)
 
 
 def welcome_panel() -> Panel:
     body = Group(
         Text("Text-to-SQL workspace", style=f"bold {TEXT}"),
         Text("Ask a question in plain English. The app returns generated SQL, result rows, and a short explanation.", style=MUTED),
-        Text("Press Enter to send. Press Ctrl+C to quit.", style=MUTED),
+        Text("Press Enter to send. Ctrl+C to quit.", style=MUTED),
     )
     return _panel(body, title="Ready", border_style=BORDER)
 

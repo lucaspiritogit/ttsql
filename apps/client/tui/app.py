@@ -11,6 +11,8 @@ from textual.widgets import Input
 from apps.client.api import stream_query
 from apps.client.config import API_URL, QUERY_ENDPOINT
 from apps.client.tui.rendering import (
+    answer_panel,
+    answer_spinner,
     canceled_panel,
     error_panel,
     format_response,
@@ -49,11 +51,11 @@ class TextToSqlTui(App[None]):
         height: 3;
         background: #171716;
         color: #E8E6E1;
-        border: solid #2A2A28;
+        border: none;
     }
 
     Input:focus {
-        border: solid #9A9690;
+        border: none;
     }
 
     Input > .input--placeholder {
@@ -74,16 +76,19 @@ class TextToSqlTui(App[None]):
 
     TITLE = "Text-to-SQL"
     SUB_TITLE = f"API: {API_URL}{QUERY_ENDPOINT}"
+    ALLOW_SELECT = True
+    ENABLE_SELECT_AUTO_SCROLL = True
 
     def __init__(self) -> None:
         super().__init__()
         self._query_task: asyncio.Task[None] | None = None
         self._active_response: Message | None = None
+        self._active_answer: Message | None = None
 
     def compose(self) -> ComposeResult:
         yield VerticalScroll(Message(welcome_panel()), id="messages")
         with Container(id="input_bar"):
-            yield Input(placeholder="Ask a question about the data…", id="prompt")
+            yield Input(id="prompt")
 
     def on_mount(self) -> None:
         self.call_after_refresh(self._focus_prompt)
@@ -102,6 +107,9 @@ class TextToSqlTui(App[None]):
         if self._active_response is not None:
             self._active_response.update(canceled_panel())
             self._scroll_to_end()
+        if self._active_answer is not None:
+            self._active_answer.update(canceled_panel())
+            self._scroll_to_end()
         self._focus_prompt()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -113,6 +121,10 @@ class TextToSqlTui(App[None]):
             self._query_task.cancel()
             if self._active_response is not None:
                 self._active_response.update(canceled_panel(
+                    "Canceled because a new query was submitted."))
+                self._scroll_to_end()
+            if self._active_answer is not None:
+                self._active_answer.update(canceled_panel(
                     "Canceled because a new query was submitted."))
                 self._scroll_to_end()
 
@@ -132,10 +144,16 @@ class TextToSqlTui(App[None]):
         response_payload: dict[str, object] = {"question": prompt}
         stream_error = False
         spinner_active = [True]
+        answer_message: Message | None = None
+        answer_active = [False]
+        answer_spin = answer_spinner()
 
         def refresh_spinner() -> None:
             if spinner_active[0]:
                 self._update_message(thinking, thinking_panel(spinner))
+            if answer_active[0] and answer_message is not None:
+                self._update_message(
+                    answer_message, thinking_panel(answer_spin))
 
         spinner_timer = self.set_interval(0.125, refresh_spinner)
 
@@ -144,28 +162,52 @@ class TextToSqlTui(App[None]):
                 if event_name == "status":
                     message = data.get("message", "Working") if isinstance(
                         data, dict) else str(data)
-                    update_thinking_spinner(spinner, str(
-                        message).replace("_", " ").capitalize())
-                    spinner_active[0] = True
-                    self._update_message(thinking, thinking_panel(spinner))
+                    status_text = str(message).replace("_", " ").capitalize()
+                    if message == "explaining_result":
+                        spinner_active[0] = False
+                        if answer_message is None:
+                            answer_message = Message(
+                                thinking_panel(answer_spin))
+                            self._append(answer_message)
+                            self._active_answer = answer_message
+                        answer_active[0] = True
+                        update_thinking_spinner(answer_spin, status_text)
+                        self._update_message(
+                            answer_message, thinking_panel(answer_spin))
+                    else:
+                        update_thinking_spinner(spinner, status_text)
+                        spinner_active[0] = True
+                        self._update_message(thinking, thinking_panel(spinner))
                 elif event_name == "sql" and isinstance(data, dict):
                     spinner_active[0] = False
                     response_payload["sql"] = data.get("sql", "")
-                    self._update_message(thinking, format_response(response_payload))
+                    self._update_message(
+                        thinking, format_response(response_payload))
                 elif event_name == "rows" and isinstance(data, dict):
                     spinner_active[0] = False
                     response_payload["rows"] = data.get("rows", [])
-                    self._update_message(thinking, format_response(response_payload))
+                    self._update_message(
+                        thinking, format_response(response_payload))
                 elif event_name == "answer" and isinstance(data, dict):
-                    spinner_active[0] = False
-                    response_payload["answer"] = data.get("answer", "")
-                    self._update_message(thinking, format_response(response_payload))
+                    answer_active[0] = False
+                    answer = str(data.get("answer", ""))
+                    if answer_message is None:
+                        answer_message = Message(answer_panel(answer))
+                        self._append(answer_message)
+                    else:
+                        self._update_message(
+                            answer_message, answer_panel(answer))
+                    self._active_answer = None
                 elif event_name == "error":
                     spinner_active[0] = False
                     stream_error = True
                     message = data.get("message", data) if isinstance(
                         data, dict) else data
                     self._update_message(thinking, error_panel(str(message)))
+                    if answer_message is not None:
+                        answer_active[0] = False
+                        self._update_message(
+                            answer_message, error_panel(str(message)))
                 elif event_name == "done" and not stream_error:
                     spinner_active[0] = False
                     if isinstance(data, dict) and data.get("ok") is False:
@@ -174,14 +216,22 @@ class TextToSqlTui(App[None]):
         except asyncio.CancelledError:
             spinner_active[0] = False
             self._update_message(thinking, canceled_panel())
+            if answer_message is not None:
+                answer_active[0] = False
+                self._update_message(answer_message, canceled_panel())
         except Exception as exc:  # noqa: BLE001 - user-facing TUI should show all request failures
             spinner_active[0] = False
             self._update_message(thinking, error_panel(str(exc)))
+            if answer_message is not None:
+                answer_active[0] = False
+                self._update_message(answer_message, error_panel(str(exc)))
         finally:
             spinner_active[0] = False
             spinner_timer.stop()
             if self._active_response is thinking:
                 self._active_response = None
+            if self._active_answer is answer_message:
+                self._active_answer = None
             if self._query_task is asyncio.current_task():
                 self._query_task = None
             input_widget.focus()
