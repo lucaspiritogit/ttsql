@@ -69,11 +69,11 @@ I decided to create a monorepo with both `client` and `server` to separate conce
 
 ### 1. Build and start the backend services
 
+While standing on the root of the project, execute the 2 following commands
+
 ```bash
 docker compose up --build -d
 ```
-
-On the first run, the `model-init` one-shot container downloads the local Ollama models into the shared `ollama` Docker volume. This can take several minutes depending on your connection and machine. Later runs reuse the cached models. After pulls finish, a second one-shot container `model-warmup` preloads each configured model via Ollama’s HTTP API (`POST /api/generate` with a minimal `{"model": "…"}` body, as documented for preloading). That adds some startup time on cold boot but avoids paying the full first-load cost on the first user query.
 
 ### 2. Run the TUI
 
