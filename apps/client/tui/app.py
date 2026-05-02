@@ -150,10 +150,10 @@ class TextToSqlTui(App[None]):
 
         def refresh_spinner() -> None:
             if spinner_active[0]:
-                self._update_message(thinking, thinking_panel(spinner))
+                self._update_message(thinking, thinking_panel(spinner), scroll=False)
             if answer_active[0] and answer_message is not None:
                 self._update_message(
-                    answer_message, thinking_panel(answer_spin))
+                    answer_message, thinking_panel(answer_spin), scroll=False)
 
         spinner_timer = self.set_interval(0.125, refresh_spinner)
 
@@ -173,11 +173,11 @@ class TextToSqlTui(App[None]):
                         answer_active[0] = True
                         update_thinking_spinner(answer_spin, status_text)
                         self._update_message(
-                            answer_message, thinking_panel(answer_spin))
+                            answer_message, thinking_panel(answer_spin), scroll=False)
                     else:
                         update_thinking_spinner(spinner, status_text)
                         spinner_active[0] = True
-                        self._update_message(thinking, thinking_panel(spinner))
+                        self._update_message(thinking, thinking_panel(spinner), scroll=False)
                 elif event_name == "sql" and isinstance(data, dict):
                     spinner_active[0] = False
                     response_payload["sql"] = data.get("sql", "")
@@ -241,9 +241,10 @@ class TextToSqlTui(App[None]):
         messages.mount(message)
         self._scroll_to_end()
 
-    def _update_message(self, message: Message, renderable: object) -> None:
+    def _update_message(self, message: Message, renderable: object, *, scroll: bool = True) -> None:
         message.update(renderable)
-        self._scroll_to_end()
+        if scroll:
+            self._scroll_to_end()
 
     def _scroll_to_end(self) -> None:
         messages = self.query_one("#messages", VerticalScroll)
