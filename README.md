@@ -4,6 +4,10 @@ A local, Dockerized natural-language-to-SQL application.
 
 The user asks a question in a terminal UI, the backend asks a locally hosted model to generate SQL, executes the SQL against a PostgreSQL database seeded from `data.csv`, and returns the generated SQL plus the query result through SSE streaming to allow for a dynamic experience on the terminal.
 
+![diagram](./assets/diagram.png)
+
+_Simplified diagram of the overall solution. I used double arrows on the Ollama interaction on the backend to symbolize 2 round trips, one for the query, and the other for the explanation of said query_
+
 ## 🚨 Important: local model requirements
 
 To comply with the assignment requirements, this project hosts local Ollama models instead of calling an external API.
