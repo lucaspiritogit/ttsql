@@ -98,11 +98,6 @@ The Ollama service is long-running. Startup order looks like this:
 3. **`model-warmup`**: runs after `model-init` completes (and Ollama is still healthy). It issues two lightweight requests against `http://ollama:11434/api/generate`, one per model key, following the documented pattern for [loading a model](https://docs.ollama.com/api/generate) with a JSON body that only sets `model`, so weights are resident before traffic hits the FastAPI container.
 4. **`server`**: starts only once Postgres is healthy and `model-warmup` has completed successfully.
 
-Default models:
-
-- SQL generation: `pxlksr/defog_sqlcoder-7b-2:Q2_KS`
-- Result explanation: `qwen2.5-coder:1.5b`
-
 ## Design decisions and trade-offs
 
 ### Model choice
