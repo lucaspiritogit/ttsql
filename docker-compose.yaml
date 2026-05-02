@@ -10,11 +10,38 @@ services:
     volumes:
       - ./data.csv:/seed/data.csv
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   model:
     image: ollama/ollama:latest
     volumes:
       - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  model-init:
+    image: ollama/ollama:latest
+    depends_on:
+      model:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://model:11434
+    volumes:
+      - ollama:/root/.ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "echo 'Pulling SQL generation model...';
+      ollama pull pxlksr/defog_sqlcoder-7b-2:Q2_KS;
+      echo 'Pulling explanation model...';
+      ollama pull qwen2.5-coder:1.5b;
+      echo 'Models ready.'"
 
   server:
     build:
@@ -26,12 +53,15 @@ services:
       MODEL_NAME: pxlksr/defog_sqlcoder-7b-2:Q2_KS
       EXPLANATION_MODEL_NAME: qwen2.5-coder:1.5b
     depends_on:
-      - db
-      - model
+      db:
+        condition: service_healthy
+      model-init:
+        condition: service_completed_successfully
     ports:
       - "8000:8000"
 
   client:
+    profiles: ["client"]
     build:
       context: .
       dockerfile: apps/client/Dockerfile
