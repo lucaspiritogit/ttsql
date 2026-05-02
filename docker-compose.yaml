@@ -16,8 +16,10 @@ services:
       timeout: 5s
       retries: 10
 
-  model:
+  ollama:
     image: ollama/ollama:latest
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
     volumes:
       - ollama:/root/.ollama
     healthcheck:
@@ -29,10 +31,10 @@ services:
   model-init:
     image: ollama/ollama:latest
     depends_on:
-      model:
+      ollama:
         condition: service_healthy
     environment:
-      OLLAMA_HOST: http://model:11434
+      OLLAMA_HOST: http://ollama:11434
     volumes:
       - ollama:/root/.ollama
     entrypoint: ["/bin/sh", "-c"]
@@ -43,19 +45,40 @@ services:
       ollama pull qwen2.5-coder:1.5b;
       echo 'Models ready.'"
 
+  model-warmup:
+    image: curlimages/curl:8.11.1
+    depends_on:
+      ollama:
+        condition: service_healthy
+      model-init:
+        condition: service_completed_successfully
+    environment:
+      SQL_MODEL: pxlksr/defog_sqlcoder-7b-2:Q2_KS
+      EXPLANATION_MODEL: qwen2.5-coder:1.5b
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        echo "Preloading $$SQL_MODEL..."
+        curl -sfS http://ollama:11434/api/generate -d "{\"model\":\"$$SQL_MODEL\"}" -o /dev/null
+        echo "Preloading $$EXPLANATION_MODEL..."
+        curl -sfS http://ollama:11434/api/generate -d "{\"model\":\"$$EXPLANATION_MODEL\"}" -o /dev/null
+        echo "Preload done."
+    restart: "no"
+
   server:
     build:
       context: .
       dockerfile: apps/server/Dockerfile
     environment:
       DATABASE_URL: postgresql://app:app@db:5432/app
-      OLLAMA_URL: http://model:11434
+      OLLAMA_URL: http://ollama:11434
       MODEL_NAME: pxlksr/defog_sqlcoder-7b-2:Q2_KS
       EXPLANATION_MODEL_NAME: qwen2.5-coder:1.5b
     depends_on:
       db:
         condition: service_healthy
-      model-init:
+      model-warmup:
         condition: service_completed_successfully
     ports:
       - "8000:8000"

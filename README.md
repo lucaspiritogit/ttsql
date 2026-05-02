@@ -73,7 +73,7 @@ I decided to create a monorepo with both `client` and `server` to separate conce
 docker compose up --build -d
 ```
 
-On the first run, the `model-init` one-shot container downloads the local Ollama models into the shared `ollama` Docker volume. This can take several minutes depending on your connection and machine. Later runs reuse the cached models.
+On the first run, the `model-init` one-shot container downloads the local Ollama models into the shared `ollama` Docker volume. This can take several minutes depending on your connection and machine. Later runs reuse the cached models. After pulls finish, a second one-shot container `model-warmup` preloads each configured model via Ollama’s HTTP API (`POST /api/generate` with a minimal `{"model": "…"}` body, as documented for preloading). That adds some startup time on cold boot but avoids paying the full first-load cost on the first user query.
 
 ### 2. Run the TUI
 
@@ -91,7 +91,12 @@ It creates a single `sales` table and imports `data.csv`.
 
 ## Model initialization
 
-The Ollama service is long-running, while `model-init` is a temporary setup container. `model-init` waits for Ollama to become healthy, pulls the configured models, stores them in the shared `ollama` volume, and exits successfully. The API server only starts after the database is healthy and `model-init` has completed.
+The Ollama service is long-running. Startup order looks like this:
+
+1. **`ollama`**: daemon keeps models on disk under the named volume and exposes the API once healthy.
+2. **`model-init`**: waits for Ollama to be healthy, pulls the configured models into that volume, then exits successfully.
+3. **`model-warmup`**: runs after `model-init` completes (and Ollama is still healthy). It issues two lightweight requests against `http://ollama:11434/api/generate`, one per model key, following the documented pattern for [loading a model](https://docs.ollama.com/api/generate) with a JSON body that only sets `model`, so weights are resident before traffic hits the FastAPI container.
+4. **`server`**: starts only once Postgres is healthy and `model-warmup` has completed successfully.
 
 Default models:
 

@@ -12,7 +12,6 @@ def generate(
     model: str,
     prompt: str,
     options: dict[str, Any],
-    keep_alive: str | None = "30m",
     timeout: float = 120,
 ) -> str:
     payload: dict[str, Any] = {
@@ -21,8 +20,6 @@ def generate(
         "stream": False,
         "options": options,
     }
-    if keep_alive is not None:
-        payload["keep_alive"] = keep_alive
 
     try:
         response = requests.post(
