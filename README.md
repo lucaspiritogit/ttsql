@@ -4,6 +4,22 @@ A local, Dockerized natural-language-to-SQL application.
 
 The user asks a question in a terminal UI, the backend asks a locally hosted model to generate SQL, executes the SQL against a PostgreSQL database seeded from `data.csv`, and returns the generated SQL plus the query result through SSE streaming to allow for a dynamic experience on the terminal.
 
+## 🚨 Important: local model requirements
+
+To comply with the assignment requirements, this project hosts local Ollama models instead of calling an external API.
+
+Models used:
+
+- SQL generation: `pxlksr/defog_sqlcoder-7b-2:Q2_KS`
+- Result explanation: `qwen2.5-coder:1.5b`
+
+Recommended Docker memory allocation:
+
+- Minimum: 6 GB
+- Recommended: 8 GB+
+
+Theres a specific section about trade-offs later in the document with deeper details, but im choosing to host a heavier model (SQLCoder-7b) in favor of precision and accuracy. Even though im a big fan of trying to have optimizations for lower-end servers, 6gb of ram does not seem like a big ask to test the demo.
+
 ## Project structure
 
 I decided to create a monorepo with both `client` and `server` to separate concerns. Each module has its own Dockerfile and we have a `docker-compose` on root to have all the applications running.
@@ -47,31 +63,36 @@ I decided to create a monorepo with both `client` and `server` to separate conce
 
 ## How to run the project
 
-### 1. Build and start all services detached
+### 1. Build and start the backend services
 
 ```bash
 docker compose up --build -d
 ```
 
-### 2. Pull the local models
+On the first run, the `model-init` one-shot container downloads the local Ollama models into the shared `ollama` Docker volume. This can take several minutes depending on your connection and machine. Later runs reuse the cached models.
 
-The Ollama container needs the configured models available locally. Pull them once:
-
-```bash
-docker compose exec model ollama pull pxlksr/defog_sqlcoder-7b-2:Q2_KS && docker compose exec model ollama pull qwen2.5-coder:1.5b
-```
-
-### 3. Run the TUI
+### 2. Run the TUI
 
 ```bash
 docker compose run --rm client
 ```
 
+The TUI client is behind a Compose profile, so it does not start in the background during `docker compose up`.
+
 ## Database
 
 The database is initialized by `db/init.sql` when the Postgres container starts for the first time.
 
-It creates a single `sales` table and imports `data.csv`:
+It creates a single `sales` table and imports `data.csv`.
+
+## Model initialization
+
+The Ollama service is long-running, while `model-init` is a temporary setup container. `model-init` waits for Ollama to become healthy, pulls the configured models, stores them in the shared `ollama` volume, and exits successfully. The API server only starts after the database is healthy and `model-init` has completed.
+
+Default models:
+
+- SQL generation: `pxlksr/defog_sqlcoder-7b-2:Q2_KS`
+- Result explanation: `qwen2.5-coder:1.5b`
 
 ## Design decisions and trade-offs
 
@@ -83,7 +104,7 @@ The default model is:
 pxlksr/defog_sqlcoder-7b-2:Q2_KS
 ```
 
-This model is specialized for text-to-SQL generation, which should improve SQL accuracy compared with a general coding model. The trade-off is that it is larger and may require more local resources.
+This model is specialized for text-to-SQL generation, which improves SQL accuracy compared with a general coding model. The trade-off is that it is larger and may require more local resources, but for the current scenario i believe its worth it.
 
 A second lightweight SLM is used only after SQL execution to turn result rows into a short natural-language explanation. SQL generation still uses SQLCoder, and the UI keeps the generated SQL visible alongside the rows and explanation.
 
@@ -93,16 +114,45 @@ The explanation model defaults to:
 qwen2.5-coder:1.5b
 ```
 
+### Monorepo
+
+I firmly believe that monorepos can be a double-edged sword for fast-moving teams. On one hand, they make it easy to iterate quickly and keep everything in one place, which improves visibility and collaboration. On the other, they can become difficult to scale if boundaries are not well defined, especially when evolving toward microservices or a larger more complex architecture.
+
+A well-structured monorepo can provide strong separation of concerns through defined modules, while still benefiting from shared tooling, consistent standards, and simpler dependency management.
+
+Even with modular separation, it’s important to be intentional about how components interact. Particular attention should be paid to:
+
+- how database access is owned and exposed across modules
+- how shared packages and libraries are designed and constrained
+- how public interfaces are defined and enforced
+
+Without these guardrails, a monorepo can easily drift into tight coupling, making future scaling and service extraction significantly harder.
+
+In the case of this project, a monorepo fits well as we do not have many moving parts, so even though this repo may not follow 100% best practices of monorepos, we can still make it work fairly easy in case of a migration.
+
+### TUI
+
+The terminal has become a nice place for agents and developers to work on, but this project will appeal more to power-users rather than individuals that prefer to work with web-based UI's or similar.
+
 ## Scaling the project
 
-If the dataset grew to many larger tables, I would first make schema handling more explicit instead of injecting one static schema string. The backend could retrieve only the relevant schema fragments for each question before prompting the agent. I would also add indexes for common filters. We can also implement database replication in case of a huge ingress, and make tables into VIEWS for affordable SELECTs.
+### Bigger dataset
+
+- **Make schema handling more explicit**: We can use VIEWS like `information_schema` of PostgreSQL to get information about the tables, and only fetch the necessary entities for the model.
+- **Indexing**: Indexes for common filters/columns on the database like date, quantity, etc.
+- **Database replication**: Create read-replicas of a main Database to read from.
+- **Materialized VIEWS**: For data that is not needed in-real time, we can use MATERIALIZED VIEWS to reduce read costs.
+
+### High traffic
 
 For high traffic, the services should be scaled independently:
 
-- Run multiple API containers behind a load balancer.
-- Keep Postgres as a managed/primary database with connection pooling, like PgBouncer.
-- Deploy the models on a dedicated GPU-based VM, or use something like OpenRouter for inference.
-- Add caching.
+- **Load balancing**: Run multiple API containers and redirect traffic with load balancing.
+- **Connection pooling**: Keep Postgres as a managed/primary database with connection pooling, like PgBouncer.
+- **Dedicated GPU-based VMs**: Deploy the models on a dedicated GPU-based VM, or use an external provider like OpenRouter for inference.
+- **Caching**: Add caching with redis for frequent LLM responses.
+
+This project uses a TUI, so there are no browser static assets to scale or cache. If this became a web application, the frontend could be built as static assets and served through a CDN such as Cloudflare. That would make the UI cheap and globally cacheable.
 
 ## AI usage
 
@@ -115,5 +165,5 @@ The assignment PDF text was provided as context, with the additional decision th
 To improve the agent capabilities, i used the following skills:
 
 - [/grill-me](https://github.com/mattpocock/skills/blob/main/skills/productivity/grill-me/SKILL.md) Similar to a PLAN mode, used to talk about product definitions and understandment of the assignment with the agent.
-- [minimalist-ui](https://www.ui-skills.com/skills/leonxlnx/minimalist-skill/) Im a fan of monochrome palletes and i wanted to have a minimalistic feeling for this agentic TUI
-- [improve-codebase-architecture](https://github.com/mattpocock/skills/blob/main/skills/engineering/improve-codebase-architecture/SKILL.md) Not heavily used, but its really nice to make the finishing touches on the overall arquitecture/structure of the repo.
+- [minimalist-ui](https://www.ui-skills.com/skills/leonxlnx/minimalist-skill/) I wanted to use monochrome palletes for a minimalistic feeling on this agentic TUI.
+- [improve-codebase-architecture](https://github.com/mattpocock/skills/blob/main/skills/engineering/improve-codebase-architecture/SKILL.md) Not heavily used, but its really nice to make the finishing touches on the overall architecture/structure of the repo to see if im missing something.
