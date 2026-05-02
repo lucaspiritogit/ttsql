@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from apps.server.database import execute_sql
-from apps.server.models import QueryRequest
+from apps.server.models import QueryRequest, QueryResponse
 from apps.server.schema import SCHEMA_DESCRIPTION
 from apps.server.services.result_explainer import explain_result
 from apps.server.services.text_to_sql import generate_sql
@@ -24,6 +24,22 @@ def read_root() -> dict[str, str]:
 @router.get("/schema")
 def schema() -> dict[str, str]:
     return {"schema": SCHEMA_DESCRIPTION}
+
+
+@router.post("/query", response_model=QueryResponse)
+async def query(request: QueryRequest) -> QueryResponse:
+    question = request.text
+    if not question:
+        raise HTTPException(status_code=400, detail="question is required")
+
+    try:
+        sql = await generate_sql(question)
+        rows = await asyncio.to_thread(execute_sql, sql)
+        answer = await explain_result(question, sql, rows)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return QueryResponse(question=question, sql=sql, rows=rows, answer=answer)
 
 
 @router.post("/query/stream")
